@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Andrey Samsonov — PostgreSQL DBA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,600;1,300&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d0d0d;
+      --surface: #141414;
+      --surface2: #1a1a1a;
+      --border: #2a2a2a;
+      --accent: #00e5a0;
+      --accent2: #005f42;
+      --text: #e8e8e8;
+      --muted: #888;
+      --mono: 'IBM Plex Mono', monospace;
+      --sans: 'IBM Plex Sans', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-weight: 300;
+      line-height: 1.7;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ---- GRID BACKGROUND ---- */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,160,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,160,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 60px 32px 80px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ---- HEADER ---- */
+    header {
+      border-left: 3px solid var(--accent);
+      padding-left: 24px;
+      margin-bottom: 56px;
+      animation: slideIn 0.6s ease both;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .name {
+      font-family: var(--mono);
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: #fff;
+      line-height: 1.1;
+    }
+
+    .name span { color: var(--accent); }
+
+    .role {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      color: var(--accent);
+      margin-top: 6px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .objective {
+      margin-top: 16px;
+      font-size: 0.95rem;
+      color: #aaa;
+      max-width: 600px;
+      font-style: italic;
+    }
+
+    /* ---- CONTACT BAR ---- */
+    .contact-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 20px;
+      margin-bottom: 52px;
+      padding: 16px 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      animation: fadeUp 0.6s 0.1s ease both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .contact-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .contact-item:hover { color: var(--accent); }
+
+    .contact-item svg {
+      width: 14px; height: 14px;
+      flex-shrink: 0;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* ---- SECTION ---- */
+    section {
+      margin-bottom: 48px;
+      animation: fadeUp 0.6s ease both;
+    }
+
+    section:nth-child(3) { animation-delay: 0.15s; }
+    section:nth-child(4) { animation-delay: 0.25s; }
+    section:nth-child(5) { animation-delay: 0.35s; }
+    section:nth-child(6) { animation-delay: 0.45s; }
+    section:nth-child(7) { animation-delay: 0.55s; }
+
+    .section-label {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ---- JOB ---- */
+    .job {
+      padding: 20px 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      margin-bottom: 14px;
+      position: relative;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .job:hover {
+      border-color: var(--accent2);
+      transform: translateX(4px);
+    }
+
+    .job::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: var(--accent);
+      transform: scaleY(0);
+      transform-origin: bottom;
+      transition: transform 0.3s;
+    }
+
+    .job:hover::before { transform: scaleY(1); }
+
+    .job-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+
+    .job-title {
+      font-weight: 600;
+      font-size: 1rem;
+      color: #fff;
+    }
+
+    .job-company {
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 0.82rem;
+    }
+
+    .job-period {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .job-body {
+      font-size: 0.88rem;
+      color: #aaa;
+    }
+
+    .job-body ul {
+      list-style: none;
+      margin-top: 8px;
+    }
+
+    .job-body ul li {
+      padding: 3px 0;
+      padding-left: 16px;
+      position: relative;
+    }
+
+    .job-body ul li::before {
+      content: '›';
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .job-tag {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--accent);
+      background: rgba(0,229,160,0.07);
+      border: 1px solid var(--accent2);
+      padding: 2px 8px;
+      margin: 8px 4px 0 0;
+    }
+
+    /* ---- SKILLS ---- */
+    .skill-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 560px) {
+      .skill-group { grid-template-columns: 1fr; }
+    }
+
+    .skill-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 16px 18px;
+    }
+
+    .skill-card-title {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--accent);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    .skill-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .pill {
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      color: #ccc;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 3px 10px;
+      transition: border-color 0.2s, color 0.2s;
+    }
+
+    .pill:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ---- EDUCATION ---- */
+    .edu-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      padding: 14px 18px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      margin-bottom: 10px;
+      gap: 4px;
+    }
+
+    .edu-main { font-weight: 600; font-size: 0.95rem; }
+    .edu-sub   { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+    .edu-year  { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); }
+
+    /* ---- CERTS ---- */
+    .cert-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .cert-item {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      font-size: 0.88rem;
+      color: #aaa;
+    }
+
+    .cert-item::before {
+      content: '▸';
+      color: var(--accent);
+      font-size: 0.75rem;
+      flex-shrink: 0;
+    }
+
+    /* ---- LANGUAGES ---- */
+    .lang-row {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .lang-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 0.88rem;
+    }
+
+    .lang-level {
+      font-family: var(--mono);
+      font-size: 0.73rem;
+      color: var(--accent);
+    }
+
+    /* ---- FOOTER ---- */
+    footer {
+      margin-top: 60px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: #555;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    /* ---- PRINT ---- */
+    @media print {
+      body { background: #fff; color: #111; }
+      body::before { display: none; }
+      .job, .skill-card, .edu-item, .lang-badge { border-color: #ddd; background: #fff; }
+      .job:hover { transform: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HEADER -->
+  <header>
+    <div class="name">Andrey <span>Samsonov</span></div>
+    <div class="role">PostgreSQL DBA · Middle Level</div>
+    <p class="objective">Database administrator with 2+ years of expertise in PostgreSQL and Linux. Proficient in backup, recovery, performance tuning, and Unix OS. Committed to improving reliability through strong technical and leadership skills.</p>
+  </header>
+
+  <!-- CONTACTS -->
+  <div class="contact-bar">
+    <a class="contact-item" href="tel:+79160435373">
+      <svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.8 19.8 0 0 1 3.09 5.18 2 2 0 0 1 5.07 3h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L9.09 10.91a16 16 0 0 0 6.86 6.86l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+      +7 (916) 043-53-73
+    </a>
+    <a class="contact-item" href="mailto:andrey.samsonov3096@yandex.ru">
+      <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 7L2 7"/></svg>
+      andrey.samsonov3096@yandex.ru
+    </a>
+    <a class="contact-item" href="https://t.me/Andr_Smv" target="_blank">
+      <svg viewBox="0 0 24 24"><path d="M21.2 4.2 2.8 11.3c-1.2.5-1.2 1.2-.2 1.5l4.6 1.4 1.8 5.5c.2.6.6.8 1 .5l2.7-2.5 5.2 3.8c.9.5 1.6.2 1.8-.8L22 5.1c.3-1.2-.4-1.7-1-1.3l-.8.4z"/></svg>
+      @Andr_Smv
+    </a>
+    <a class="contact-item" href="https://github.com/Andrey3096" target="_blank">
+      <svg viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+      Andrey3096
+    </a>
+    <a class="contact-item" href="https://wa.me/79160435373" target="_blank">
+      <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+      WhatsApp
+    </a>
+  </div>
+
+  <!-- EXPERIENCE -->
+  <section>
+    <div class="section-label">Experience</div>
+
+    <div class="job">
+      <div class="job-header">
+        <div>
+          <div class="job-title">PostgreSQL DBA</div>
+          <div class="job-company">Diasoft · Moscow</div>
+        </div>
+        <div class="job-period">2024 — present</div>
+      </div>
+      <div class="job-body">
+        <ul>
+          <li>Implemented database backup solutions and performed restore operations with <strong>pgbackrest</strong></li>
+          <li>Installed, configured, and deployed <strong>Patroni</strong> clustering solutions for PostgreSQL</li>
+          <li>Consulted clients on database architecture and best practices</li>
+          <li>Developed and documented support team standards</li>
+          <li>Wrote an onboarding cookbook for new DBAs covering PostgreSQL installation &amp; configuration</li>
+        </ul>
+        <div>
+          <span class="job-tag">pgbackrest</span>
+          <span class="job-tag">Patroni</span>
+          <span class="job-tag">PostgreSQL</span>
+          <span class="job-tag">HA clustering</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="job">
+      <div class="job-header">
+        <div>
+          <div class="job-title">PostgreSQL Support DBA</div>
+          <div class="job-company">Sber · Moscow</div>
+        </div>
+        <div class="job-period">2022 — 2024</div>
+      </div>
+      <div class="job-body">
+        <ul>
+          <li>Maintained health, performance and integrity of <strong>700+ production instances</strong></li>
+          <li>Performed monitoring and troubleshooting using <strong>Grafana</strong> and <strong>Prometheus</strong></li>
+          <li>Identified database bottlenecks and provided remediation steps</li>
+          <li>Implemented security standards, tuning, and enterprise-level DB configurations</li>
+          <li>Built a unified dashboard for monitoring all production databases</li>
+          <li>Assisted with query performance analysis and optimization</li>
+        </ul>
+        <div>
+          <span class="job-tag">Grafana</span>
+          <span class="job-tag">Prometheus</span>
+          <span class="job-tag">700+ instances</span>
+          <span class="job-tag">performance tuning</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SKILLS -->
+  <section>
+    <div class="section-label">Skills</div>
+    <div class="skill-group">
+      <div class="skill-card">
+        <div class="skill-card-title">Database</div>
+        <div class="skill-pills">
+          <span class="pill">PostgreSQL</span>
+          <span class="pill">plpgsql</span>
+          <span class="pill">T-SQL</span>
+        </div>
+      </div>
+      <div class="skill-card">
+        <div class="skill-card-title">Programming</div>
+        <div class="skill-pills">
+          <span class="pill">Python</span>
+          <span class="pill">PowerShell</span>
+          <span class="pill">Bash</span>
+        </div>
+      </div>
+      <div class="skill-card">
+        <div class="skill-card-title">DB Tooling</div>
+        <div class="skill-pills">
+          <span class="pill">pgbackrest</span>
+          <span class="pill">Patroni</span>
+          <span class="pill">pg_dump</span>
+          <span class="pill">pg_restore</span>
+          <span class="pill">pg_basebackup</span>
+        </div>
+      </div>
+      <div class="skill-card">
+        <div class="skill-card-title">Infrastructure</div>
+        <div class="skill-pills">
+          <span class="pill">Grafana</span>
+          <span class="pill">Prometheus</span>
+          <span class="pill">Linux</span>
+          <span class="pill">OpenVPN</span>
+          <span class="pill">firewalld</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EDUCATION -->
+  <section>
+    <div class="section-label">Education</div>
+    <div class="edu-item">
+      <div>
+        <div class="edu-main">Bachelor's Degree</div>
+        <div class="edu-sub">Higher School of Economics · Moscow</div>
+      </div>
+      <div class="edu-year">2018 — 2022</div>
+    </div>
+  </section>
+
+  <!-- CERTIFICATIONS -->
+  <section>
+    <div class="section-label">Certifications &amp; Training</div>
+    <div class="cert-list">
+      <div class="cert-item"><span>PostgresPRO — DBA2: Monitoring and Configuration</span></div>
+      <div class="cert-item"><span>PostgresPRO — DBA3: Backup and Replication</span></div>
+      <div class="cert-item"><span>PostgresPRO — QPT: Query Optimization</span></div>
+      <div class="cert-item"><span>Yandex Practicum — SQL for Developers</span></div>
+    </div>
+  </section>
+
+  <!-- LANGUAGES -->
+  <section>
+    <div class="section-label">Languages</div>
+    <div class="lang-row">
+      <div class="lang-badge">
+        Russian
+        <span class="lang-level">Native</span>
+      </div>
+      <div class="lang-badge">
+        English
+        <span class="lang-level">Upper-Intermediate</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Andrey Samsonov · PostgreSQL DBA</span>
+    <span>github.com/Andrey3096</span>
+  </footer>
+
+</div>
+</body>
+</html>
