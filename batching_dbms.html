@@ -1,0 +1,967 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Batch Deletes and Updates in PostgreSQL</title>
+  <meta name="description" content="Practical patterns for deleting and updating data in PostgreSQL in batches, with examples for indexed fields, helper tables, ctid, shell scripts, and MySQL procedures." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,600;1,300&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d0d0d;
+      --surface: #141414;
+      --surface2: #1a1a1a;
+      --border: #2a2a2a;
+      --accent: #00e5a0;
+      --accent2: #005f42;
+      --text: #e8e8e8;
+      --muted: #888;
+      --muted2: #aaa;
+      --code-bg: #1b1b1b;
+      --code-text: #d6d6d6;
+      --danger: #ff6b6b;
+      --mono: 'IBM Plex Mono', monospace;
+      --sans: 'IBM Plex Sans', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-weight: 300;
+      line-height: 1.7;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,160,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,160,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .page {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 60px 32px 80px;
+      position: relative;
+      z-index: 1;
+    }
+
+    header {
+      border-left: 3px solid var(--accent);
+      padding-left: 24px;
+      margin-bottom: 32px;
+      animation: slideIn 0.6s ease both;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font-family: var(--mono);
+      font-size: clamp(2rem, 5vw, 3.3rem);
+      font-weight: 600;
+      letter-spacing: -0.04em;
+      color: #fff;
+      line-height: 1.08;
+      max-width: 900px;
+      margin-bottom: 14px;
+    }
+
+    h1::selection,
+    h2::selection,
+    h3::selection,
+    p::selection,
+    code::selection {
+      background: var(--accent2);
+      color: #fff;
+    }
+
+    .subtitle {
+      font-size: 0.98rem;
+      color: #aaa;
+      max-width: 720px;
+      font-style: italic;
+      margin-top: 16px;
+    }
+
+    .toc {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-bottom: 52px;
+      padding: 16px 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      animation: fadeUp 0.6s 0.1s ease both;
+    }
+
+    .toc a {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.2s, border-color 0.2s;
+      border-bottom: 1px solid transparent;
+    }
+
+    .toc a::before {
+      content: '#';
+      color: var(--accent2);
+      transition: color 0.2s;
+    }
+
+    .toc a:hover,
+    .toc a:hover::before {
+      color: var(--accent);
+    }
+
+    section {
+      margin-bottom: 52px;
+      animation: fadeUp 0.6s ease both;
+    }
+
+    section:nth-of-type(1) { animation-delay: 0.15s; }
+    section:nth-of-type(2) { animation-delay: 0.22s; }
+    section:nth-of-type(3) { animation-delay: 0.29s; }
+    section:nth-of-type(4) { animation-delay: 0.36s; }
+    section:nth-of-type(5) { animation-delay: 0.43s; }
+    section:nth-of-type(6) { animation-delay: 0.50s; }
+
+    .section-label {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    h2 {
+      font-size: clamp(1.45rem, 3vw, 2rem);
+      line-height: 1.2;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 18px;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #fff;
+      margin-top: 30px;
+      margin-bottom: 10px;
+      letter-spacing: -0.01em;
+    }
+
+    h4 {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--accent);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-top: 22px;
+      margin-bottom: 10px;
+    }
+
+    p {
+      font-size: 0.93rem;
+      color: #aaa;
+      margin: 10px 0;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid var(--accent2);
+      transition: color 0.2s, border-color 0.2s;
+    }
+
+    a:hover {
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .card,
+    .note {
+      padding: 18px 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      position: relative;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .card:hover,
+    .note:hover {
+      border-color: var(--accent2);
+      transform: translateX(4px);
+    }
+
+    .card::before,
+    .note::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: var(--accent);
+      transform: scaleY(0);
+      transform-origin: bottom;
+      transition: transform 0.3s;
+    }
+
+    .card:hover::before,
+    .note:hover::before { transform: scaleY(1); }
+
+    .card h3,
+    .card h4 { margin-top: 0; }
+
+    .note {
+      background: rgba(0,229,160,0.055);
+      margin: 18px 0;
+    }
+
+    ul {
+      list-style: none;
+      margin: 12px 0 18px;
+      padding: 0;
+    }
+
+    li {
+      position: relative;
+      padding: 3px 0 3px 16px;
+      color: #aaa;
+      font-size: 0.9rem;
+    }
+
+    li::before {
+      content: '›';
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    code {
+      font-family: var(--mono);
+      font-size: 0.86em;
+      color: #d8f7ec;
+      background: rgba(0,229,160,0.07);
+      border: 1px solid rgba(0,95,66,0.7);
+      padding: 0.08em 0.35em;
+    }
+
+    pre {
+      margin: 16px 0 24px;
+      padding: 44px 20px 18px;
+      overflow-x: auto;
+      color: var(--code-text);
+      background: var(--code-bg);
+      border: 1px solid #343434;
+      border-left: 3px solid var(--accent);
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      line-height: 1.55;
+      tab-size: 4;
+      white-space: pre;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+      position: relative;
+    }
+
+    pre code {
+      color: inherit;
+      background: transparent;
+      border: 0;
+      padding: 0;
+      font-size: inherit;
+    }
+
+    .copy-code {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 9px;
+      color: var(--muted);
+      background: #242424;
+      border: 1px solid #3a3a3a;
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s, background 0.2s;
+    }
+
+    .copy-code:hover {
+      color: var(--accent);
+      border-color: var(--accent2);
+      background: #202020;
+    }
+
+    .copy-code svg {
+      width: 13px;
+      height: 13px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .copy-code.copied {
+      color: var(--accent);
+      border-color: var(--accent2);
+    }
+
+    strong { color: #fff; font-weight: 600; }
+
+    .footer {
+      margin-top: 60px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: #555;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .footer p { color: #555; font-size: 0.72rem; }
+
+    @media (max-width: 720px) {
+      .page {
+        padding: 38px 18px 64px;
+      }
+
+      header {
+        padding-left: 18px;
+        margin-bottom: 26px;
+      }
+
+      .toc {
+        margin-bottom: 40px;
+        padding: 14px 16px;
+      }
+
+      pre {
+        font-size: 0.7rem;
+        padding: 42px 14px 15px;
+      }
+    }
+
+    @media print {
+      body { background: #fff; color: #111; }
+      body::before { display: none; }
+      .page { padding: 24px; max-width: 100%; }
+      .toc, .card, .note, pre { background: #fff; border-color: #ddd; color: #111; }
+      p, li { color: #333; }
+      h1, h2, h3 { color: #111; }
+      code { color: #111; background: #f5f5f5; border-color: #ddd; }
+      pre code { color: #111; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">PostgreSQL maintenance</p>
+      <h1>Batch Deletes and Updates in PostgreSQL</h1>
+      <p class="subtitle">Why large single-transaction changes are risky, when they are acceptable, and how to process data in smaller, safer batches.</p>
+    </header>
+
+    <section id="why">
+      <span class="section-label">Problem</span>
+      <h2>Why a single large transaction can hurt</h2>
+
+      <nav class="toc" aria-label="Table of contents">
+      <a>Locks</a>
+      <a>Autovacuum and bloat</a>
+      <a>No progress persistence</a>
+      <a>WAL growth and replication pressure</a>
+      <a>Uncontrolled I/O load</a>
+    </nav>
+
+      <h3> Locks</h3>
+      <p>At a high level, there are two kinds of locks involved: table-level and row-level.</p>
+      <p>Whenever you modify rows, PostgreSQL takes a <code>Row Exclusive</code> lock on the table. It is not the strictest one, but it still conflicts with operations like creating indexes, adding triggers, running <code>REFRESH MATERIALIZED VIEW CONCURRENTLY</code>, or altering the table structure. If one of those operations kicks in during a long-running delete, it will simply have to wait until your transaction finishes — which can lead to long and unpredictable delays.</p>
+      <p>On the row level, things are even more straightforward. PostgreSQL does not allow two transactions to modify the same row version at the same time. So if another transaction tries to update or delete the same rows, it just waits in line. If your transaction is long-running, you can easily end up blocking other queries for a long time.</p>
+      <div class="note"><p>Batching keeps transactions short.</p></div>
+
+      <h3> Autovacuum and bloat</h3>
+      <p>A long-running single-transaction <code>UPDATE</code> or <code>DELETE</code> holds back the database horizon (<code>xmin</code>).</p>
+      <p>As a result, autovacuum cannot remove dead tuples that may still be visible to an active transaction. If this situation persists, table and index bloat can accumulate over time.</p>
+      <div class="note"><p>Batching helps avoid holding back the database horizon.</p></div>
+
+      <h3> No progress persistence</h3>
+      <p>A long-running transaction does not save intermediate progress. If it fails or gets interrupted, everything is rolled back and you have to start from scratch — which is especially painful when dealing with millions of rows.</p>
+      <div class="note"><p>Batching preserves committed progress.</p></div>
+
+      <h3> WAL growth and replication pressure</h3>
+      <p>Every <code>UPDATE</code> or <code>DELETE</code> generates WAL. When a huge amount of data is changed in a single transaction, PostgreSQL has to produce a large burst of WAL in a short period of time. That burst increases disk pressure on the primary and can also create a sudden backlog for replicas.</p>
+      <p>Batching makes the flow of changes more predictable. By adding pauses between batches, you can spread the workload over time, slow down WAL growth, and give replicas a realistic chance to consume the stream of changes without falling badly behind.</p>
+      <div class="note"><p>Batching makes the flow of changes more predictable.</p></div>
+
+      <h3> Uncontrolled I/O load</h3>
+      <p>Changing rows also changes data pages, which makes shared buffers dirty. Later, those dirty buffers have to be written to disk by background processes or by user backends. A massive update or delete can dirty a large part of the buffer cache at once, and if the storage is already busy, flushing all those pages may become expensive for the system.</p>
+      <p>With batched updates or deletes, you can regulate I/O pressure by adding a delay between batches. This spreads the work over time and makes writes smoother instead of turning them into one large spike.</p>
+      <div class="note"><p>Batching keeps I/O load under control.</p></div>
+
+    </section>
+
+    <section id="exceptions">
+      <span class="section-label">Exceptions</span>
+      <h2>When a single transaction can be acceptable</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>Small data volume</h3>
+          <p>What counts as “small” depends on your workload and SLOs.</p>
+          <p>For high-load systems, even a batch of 10k rows (actual number depends on a row size in bytes) may already be near the safe limit — increasing it further can lead to lock contention and service degradation.</p>
+          <p>On the other hand, for mixed workloads or OLAP systems, deleting a few million rows in a single transaction can be perfectly acceptable.</p>
+        </article>
+        <article class="card">
+          <h3>Deleting historical data</h3>
+          <p>If the data is no longer used by the application, it is generally safe to delete it in a single operation.</p>
+          <p>This can involve millions of rows. However, if the volume is larger, batching is still recommended to preserve progress and reduce operational risk.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="indexed">
+      <span class="section-label">PostgreSQL examples</span>
+      <h2>Index exists</h2>
+
+      <h3>Batching by time interval</h3>
+      <p>This approach works well when the cleanup condition is based on an indexed timestamp column. In this case, we can delete old rows in small time windows instead of removing everything in one large transaction.</p>
+
+<pre><code>DO
+$$
+DECLARE
+    batch_interval interval := '1 hour';
+    end_timestamp  timestamptz := now() - interval '10 days';
+    left_ts        timestamptz;
+    deleted        bigint;
+BEGIN
+    SET max_parallel_workers_per_gather = 0;
+    SET enable_seqscan = off;
+
+    SELECT MIN(created_at)
+    INTO left_ts
+    FROM return_requests
+    WHERE created_at &lt; end_timestamp;
+
+    IF left_ts IS NULL THEN
+        RAISE NOTICE 'No rows to delete';
+        RETURN;
+    END IF;
+
+    LOOP
+        EXIT WHEN left_ts &gt;= end_timestamp;
+
+        DELETE
+        FROM return_requests
+        WHERE created_at &gt;= left_ts
+          AND created_at &lt; left_ts + batch_interval
+          AND created_at &lt; end_timestamp;
+
+        GET DIAGNOSTICS deleted = ROW_COUNT;
+
+        RAISE NOTICE 'Deleted % rows for time range (% .. %)',
+            deleted,
+            left_ts,
+            left_ts + batch_interval;
+
+        COMMIT AND CHAIN;
+
+        left_ts := left_ts + batch_interval;
+    END LOOP;
+END
+$$;</code></pre>
+
+      <p><code>max_parallel_workers_per_gather = 0</code> limits parallel execution and helps keep the cleanup workload more predictable.</p>
+      <p><code>enable_seqscan = off</code> discourages sequential scans and makes PostgreSQL prefer the index on the timestamp column. Use it carefully in production: if PostgreSQL still prefers a sequential scan, the batch may simply not be selective enough.</p>
+      <p>The interval should be small enough to make each batch selective. Ideally, PostgreSQL should use an <code>Index Scan</code> instead of scanning a large part of the table with a <code>Bitmap Index Scan</code>.</p>
+
+<pre><code>Delete on return_requests  (cost=0.44..790.25 rows=0 width=0)
+  -&gt;  Index Scan using return_requests_created_at_idx on return_requests  (cost=0.44..790.25 rows=735 width=6)
+        Index Cond: ((created_at &gt;= (now() - '20 days'::interval))
+                AND (created_at &lt; ((now() - '20 days'::interval) + '01:00:00'::interval))
+                AND (created_at &lt; (now() - '10 days'::interval)))</code></pre>
+
+      <h3>Fixed-size batching by integer</h3>
+      <p>This is a more intuitive batching strategy: instead of splitting the cleanup by time ranges, we delete a fixed number of rows per iteration.</p>
+
+<pre><code>DO $$
+DECLARE
+    rows_deleted INTEGER;
+    total_deleted BIGINT := 0;
+    batch_size    INT := 1000;
+    end_timestamp timestamptz := now() - interval '10 days';
+BEGIN
+    SET max_parallel_workers_per_gather = 0;
+    SET enable_seqscan = off;
+
+    LOOP
+        WITH to_delete AS (
+            SELECT id
+            FROM return_requests
+            WHERE created_at &lt; end_timestamp
+            LIMIT batch_size
+        )
+        DELETE FROM return_requests rr
+        USING to_delete td
+        WHERE rr.id = td.id;
+
+        GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+
+        total_deleted := total_deleted + rows_deleted;
+
+        RAISE NOTICE 'Deleted % rows in this batch (total: %)',
+            rows_deleted,
+            total_deleted;
+
+        COMMIT AND CHAIN;
+
+        EXIT WHEN rows_deleted &lt; batch_size;
+
+    END LOOP;
+END $$;</code></pre>
+
+      <p>The query uses the <code>created_at</code> index to find rows, but then performs an additional lookup by primary key for each selected row. This makes the query easy to control and predictable in terms of batch size, but slightly less efficient than deleting directly by a time range. The query could scan the whole dataset, but unmodified rows are not locked and not causing waits on application side.</p>
+
+<pre><code>Delete on return_requests rr  (cost=0.85..103.25 rows=0 width=0)
+  -&gt;  Nested Loop  (cost=0.85..103.25 rows=27 width=38)
+        -&gt;  Subquery Scan on td  (cost=0.43..31.97 rows=27 width=40)
+              -&gt;  Limit  (cost=0.43..31.70 rows=27 width=8)
+                    -&gt;  Index Scan using return_requests_created_at_idx on return_requests  (cost=0.43..31.70 rows=27 width=8)
+                          Index Cond: (created_at &lt; (now() - '10 days'::interval))
+        -&gt;  Index Scan using return_requests_pkey on return_requests rr  (cost=0.42..2.64 rows=1 width=14)
+              Index Cond: (id = td.id)</code></pre>
+    </section>
+
+    <section id="no-index">
+      <h2>Index not exists</h2>
+
+      <h3>Creating an index</h3>
+      <p>If you have enough disk space and can tolerate additional write pressure, creating an index may be the simplest solution.</p>
+      <p>Use <code>CONCURRENTLY</code> to build the index with less impact and without blocking normal reads and writes. Keep in mind that even this mode is still incompatible with some operations and takes longer than a regular index build.</p>
+
+      <h3>Cleanup using a unique auxiliary column</h3>
+      <p>This approach is a bit more subtle. Instead of batching by time, we scan the table using a unique index and apply the date condition as a filter. This lets PostgreSQL avoid an expensive sequential scan, even though <code>created_at</code> is not indexed.</p>
+
+<pre><code>Delete on promo_tokens  (cost=0.42..23.03 rows=0 width=0)
+  -&gt;  Index Scan using promo_tokens_pkey on promo_tokens  (cost=0.42..23.03 rows=1 width=6)
+        Index Cond: ((id &gt;= 100012) AND (id &lt; 101012))
+        Filter: (created_at &lt; (now() - '10 days'::interval))</code></pre>
+
+      <p>This is especially useful when there is no index on <code>created_at</code>, but there is a primary key or another indexed integer column.</p>
+
+<pre><code>DO
+$$
+DECLARE
+    batch_size    bigint := 1000;
+    end_timestamp timestamptz := now() - interval '10 days';
+    left_id       bigint;
+    right_id      bigint;
+    deleted       bigint;
+BEGIN
+    SET max_parallel_workers_per_gather = 0;
+    SET enable_seqscan = off;
+
+    SELECT MIN(id), MAX(id)
+    INTO left_id, right_id
+    FROM promo_tokens;
+
+    IF left_id IS NULL THEN
+        RAISE NOTICE 'No rows to delete';
+        RETURN;
+    END IF;
+
+    LOOP
+        EXIT WHEN left_id &gt; right_id;
+
+        DELETE
+        FROM promo_tokens
+        WHERE created_at &lt; end_timestamp
+          AND id &gt;= left_id
+          AND id &lt; left_id + batch_size;
+
+        GET DIAGNOSTICS deleted = ROW_COUNT;
+
+        RAISE NOTICE 'Deleted % rows for id range [% .. %)',
+            deleted,
+            left_id,
+            left_id + batch_size;
+
+        COMMIT AND CHAIN;
+
+        left_id := left_id + batch_size;
+    END LOOP;
+END
+$$;</code></pre>
+
+      <p>Unlike time-based batching, the batch size here is fixed. This makes the workload more predictable and easier to control.</p>
+      <div class="note"><p>The main downside is that batches can be “wasted”: a range of ids may contain no rows matching the delete condition. PostgreSQL still has to scan the index and fetch heap tuples, only to discard them during filtering. This results in unnecessary CPU work and buffer activity without making actual progress.</p></div>
+
+      <h3>Cleanup using a non-unique auxiliary column</h3>
+      <p>Assume the <code>worker_id</code> column in the <code>task_processing_events</code> table has high selectivity, but is not unique. If the distribution of values is uneven and some worker ids have a large number of rows, using this column as a predicate can be expensive: a single batch may include hundreds of thousands or even millions of rows in the worst case.</p>
+      <p>A practical solution is to use the implicit system column <code>ctid</code>, which represents the physical location of a row on disk. It allows us to identify and delete specific rows without relying on a logical unique identifier.</p>
+
+<pre><code>DO $$
+DECLARE
+    rows_deleted  integer;
+    total_deleted bigint := 0;
+    batch_size    int := 1000;
+    v_worker_id   int;
+    v_worker_ids  int[];
+    end_timestamp timestamptz := now() - interval '10 days';
+BEGIN
+    SET max_parallel_workers_per_gather = 0;
+    SET enable_seqscan = off;
+
+    SELECT array_agg(DISTINCT worker_id)
+    INTO v_worker_ids
+    FROM task_processing_events
+    WHERE created_at &lt; end_timestamp;
+
+    IF v_worker_ids IS NULL THEN
+        RAISE NOTICE 'No rows to delete';
+        RETURN;
+    END IF;
+
+    FOREACH v_worker_id IN ARRAY v_worker_ids LOOP
+        LOOP
+            WITH to_delete AS (
+                SELECT ctid
+                FROM task_processing_events
+                WHERE worker_id = v_worker_id
+                  AND created_at &lt; end_timestamp
+                LIMIT batch_size
+            )
+            DELETE FROM task_processing_events tpe
+            USING to_delete td
+            WHERE tpe.ctid = td.ctid;
+
+            GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+
+            total_deleted := total_deleted + rows_deleted;
+
+            RAISE NOTICE 'worker_id=%, deleted=% rows in this batch, total=%',
+                v_worker_id,
+                rows_deleted,
+                total_deleted;
+
+            COMMIT AND CHAIN;
+
+            EXIT WHEN rows_deleted &lt; batch_size;
+        END LOOP;
+    END LOOP;
+END $$;</code></pre>
+
+      <p>Important to point out: <code>ctid</code> is not a persistent identifier. It can change after <code>UPDATE</code>, <code>VACUUM FULL</code>, <code>CLUSTER</code>, or table rewrites. It is safe as a temporary identifier within a single statement, not as something to store and reuse later.</p>
+
+<pre><code>Delete on task_processing_events tpe  (cost=0.42..331.15 rows=0 width=0)
+  -&gt;  Nested Loop  (cost=0.42..331.15 rows=1 width=36)
+        -&gt;  Subquery Scan on td  (cost=0.42..330.03 rows=1 width=36)
+              -&gt;  Limit  (cost=0.42..330.02 rows=1 width=6)
+                    -&gt;  Index Scan using task_processing_events_worker_id_idx on task_processing_events  (cost=0.42..330.02 rows=1 width=6)
+                          Index Cond: (worker_id = 978)
+                          Filter: (created_at &lt; (now() - '10 days'::interval))
+        -&gt;  Tid Scan on task_processing_events tpe  (cost=0.00..1.11 rows=1 width=6)
+              TID Cond: (ctid = td.ctid)</code></pre>
+
+      <p>This approach is similar to batching via a unique key, but uses <code>ctid</code> as a temporary physical identifier. It allows efficient row-by-row deletion even when no suitable unique column exists. However, it relies on physical row locations and should be used carefully.</p>
+    </section>
+
+    <section id="query-based">
+      <h2>Deleting data based on a query</h2>
+      <p>If the rows to delete are identified by a complex query with several joins, it may be better to materialize the result first.</p>
+      <p>Instead of recalculating the same join on every batch, we store the target row ids in a helper table and then use that table to drive the batch delete.</p>
+      <p>In this example, we delete rows from <code>delivery_events</code>, but the filtering condition is based on <code>orders.created_at</code>.</p>
+
+<pre><code>CREATE TABLE delivery_event_ids_to_delete AS
+SELECT de.id
+FROM delivery_events de
+JOIN orders o ON o.id = de.order_id
+WHERE o.created_at &lt; now() - interval '10 days';
+
+CREATE INDEX CONCURRENTLY delivery_event_ids_to_delete_id_idx
+ON delivery_event_ids_to_delete (id);
+
+DO $$
+DECLARE
+    rows_deleted  integer;
+    total_deleted bigint := 0;
+    batch_size    int := 10000;
+BEGIN
+    SET max_parallel_workers_per_gather = 0;
+    SET enable_seqscan = off;
+
+    LOOP
+        WITH batch AS (
+            DELETE FROM delivery_event_ids_to_delete
+            WHERE id IN (
+                SELECT id
+                FROM delivery_event_ids_to_delete
+                ORDER BY id
+                LIMIT batch_size
+            )
+            RETURNING id
+        )
+        DELETE FROM delivery_events de
+        USING batch b
+        WHERE de.id = b.id;
+
+        GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+
+        total_deleted := total_deleted + rows_deleted;
+
+        RAISE NOTICE 'Deleted % rows in this batch (total: %)',
+            rows_deleted,
+            total_deleted;
+
+        COMMIT AND CHAIN;
+
+        EXIT WHEN rows_deleted &lt; batch_size;
+    END LOOP;
+END $$;
+
+DROP TABLE delivery_event_ids_to_delete;</code></pre>
+
+      <p>This approach is useful when the selection logic is expensive. The complex join is executed once, and every batch works with a simple list of ids.</p>
+      <p>The helper table also preserves progress. If the cleanup is interrupted, you can continue from the remaining rows in <code>delivery_event_ids_to_delete</code>.</p>
+      <p>The trade-off is extra disk usage: you temporarily store ids and an index for them.</p>
+    </section>
+
+    <section id="batch-update">
+      <h2> Batch update</h2>
+      <p>Batch updates follow the same idea as batch deletes: instead of modifying all matching rows in one long transaction, we update a limited number of rows per iteration.</p>
+      <p>In this example, some return requests were incorrectly marked as <code>processed</code>. We reset them back to <code>new</code> so the application can process them again.</p>
+      <p>Each <code>psql</code> call runs one batch in its own transaction. The updated row ids are written to a file, which gives us a simple audit trail and helps understand how much progress was made.</p>
+
+<pre><code>#!/bin/bash
+set -euo pipefail
+
+DB_NAME="batch_delete_demo"
+DB_USER="andrey.samsonov"
+DB_HOST="localhost"
+DB_PORT="5432"
+
+OUTPUT_FILE="updated_ids.txt"
+TEMP_FILE="batch_tmp.txt"
+
+MAX_RUNS=1000
+BATCH_SIZE=1000
+CUTOFF_TIMESTAMP="2026-04-25 17:44:20.079898+03"
+
+rm -f "$OUTPUT_FILE" "$TEMP_FILE"
+
+for ((i=1; i&lt;=MAX_RUNS; i++)); do
+    psql "host=${DB_HOST} \
+          port=${DB_PORT} \
+          dbname=${DB_NAME} \
+          user=${DB_USER} \
+          target_session_attrs=read-write" \
+        -v ON_ERROR_STOP=1 \
+        -X \
+        -q \
+        -t \
+        -A \
+        -c "
+WITH to_update AS MATERIALIZED (
+    SELECT id
+    FROM return_requests
+    WHERE created_at &gt; '${CUTOFF_TIMESTAMP}'::timestamptz
+      AND status = 'processed'
+    LIMIT ${BATCH_SIZE}
+)
+UPDATE return_requests rr
+SET status = 'new'
+FROM to_update tu
+WHERE rr.id = tu.id
+RETURNING rr.id;
+" &gt; "$TEMP_FILE"
+
+    rows_updated=$(grep -c '[^[:space:]]' "$TEMP_FILE" || true)
+
+    if [ "$rows_updated" -eq 0 ]; then
+        echo "No more rows found. Exiting at iteration $i."
+        rm -f "$TEMP_FILE"
+        break
+    fi
+
+    cat "$TEMP_FILE" &gt;&gt; "$OUTPUT_FILE"
+
+    echo "Iteration $i: updated $rows_updated rows."
+done
+
+rm -f "$TEMP_FILE"
+
+echo "Done. Updated ids were written to $OUTPUT_FILE"</code></pre>
+
+      <p>The important part is not the shell script itself, but the transaction boundary: every iteration updates only a limited set of rows and commits immediately. This keeps locks short-lived and makes the operation restartable.</p>
+      <p>This pattern is useful for cron jobs, application maintenance workers, and one-time operational fixes where restartability, logging, and external control are more important than minimizing connection overhead.</p>
+    </section>
+
+    <section id="mysql">
+      <span class="section-label">MySQL</span>
+      <p>Other database systems may require slightly different ways to organize batch operations. For example, in MySQL, this logic can be wrapped into a stored procedure.</p>
+
+<pre><code>DELIMITER $$
+
+CREATE PROCEDURE batch_update_return_requests()
+BEGIN
+    DECLARE v_min_id BIGINT;
+    DECLARE v_max_id BIGINT;
+    DECLARE v_batch_size INT DEFAULT 1000;
+    DECLARE v_cutoff DATETIME DEFAULT NOW() - INTERVAL 10 DAY;
+
+    SELECT MIN(id), MAX(id)
+    INTO v_min_id, v_max_id
+    FROM return_requests
+    WHERE created_at &lt; v_cutoff
+      AND status = 'processed';
+
+    IF v_min_id IS NOT NULL THEN
+
+        WHILE v_min_id &lt;= v_max_id DO
+
+            UPDATE return_requests
+            SET status = 'new'
+            WHERE created_at &lt; v_cutoff
+              AND status = 'processed'
+              AND id BETWEEN v_min_id AND v_min_id + v_batch_size - 1;
+
+            COMMIT;
+
+            SET v_min_id = v_min_id + v_batch_size;
+
+        END WHILE;
+
+    END IF;
+END$$
+
+DELIMITER ;
+
+CALL batch_update_return_requests();</code></pre>
+
+      <p>This is the same integer-based batching pattern: the primary key defines the batch range, while the actual business condition is applied as an additional filter.</p>
+      <p>The procedure first finds the minimum and maximum <code>id</code> for rows that may need to be updated. Then it walks through that range in fixed-size chunks.</p>
+      <p>Each iteration updates only one id range, which keeps transactions smaller and reduces the risk of long locks, large rollback, and heavy replication lag.</p>
+      <p>One important difference from PostgreSQL examples is that the batching loop is implemented as a stored procedure. MySQL does not have PostgreSQL-style anonymous <code>DO $$ ... $$</code> blocks for this kind of procedural logic.</p>
+      <p>Also note that with <code>autocommit = 1</code>, each <code>UPDATE</code> is committed automatically. The explicit <code>COMMIT</code> is mostly useful when autocommit is disabled or when you want to make the batch boundary obvious.</p>
+      <div class="note"><p>The main downside is the same as with integer-based batching in PostgreSQL: some id ranges may contain no matching rows, so some batches may do no useful work. This approach works best when <code>id</code> roughly correlates with the data being updated or deleted.</p></div>
+    </section>
+
+    <section id="conclusion">
+      <span class="section-label">Summary</span>
+      <p>Batching is not about making <code>DELETE</code> or <code>UPDATE</code> magically cheap. The same rows still have to be changed, WAL still has to be generated, and dirty pages still have to be flushed eventually.</p>
+      <p>The real benefit is control: shorter locks, smaller transactions, preserved progress and smoother I/O.</p>
+      <p>If the operation is small, isolated, or strictly atomic by design, a single transaction may be fine. But once it starts touching a large amount of production data, batching is usually the safer operational choice.</p>
+      <p>If cleanup is a recurring operation, not a one-time fix, partitioning is usually the better option. You can simply drop old partitions, reclaiming space without dealing with bloat from large deletes.</p>    </section>
+    <footer class="footer">
+      <p>Andrey Samsonov · PostgreSQL maintenance notes</p>
+    </footer>
+  </main>
+
+  <script>
+    document.querySelectorAll('pre').forEach((block) => {
+      const code = block.querySelector('code');
+      if (!code) return;
+
+      const button = document.createElement('button');
+      button.className = 'copy-code';
+      button.type = 'button';
+      button.setAttribute('aria-label', 'Copy code');
+      button.innerHTML = `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        <span>copy</span>
+      `;
+
+      button.addEventListener('click', async () => {
+        const text = code.innerText;
+
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch (error) {
+          const textarea = document.createElement('textarea');
+          textarea.value = text;
+          textarea.setAttribute('readonly', '');
+          textarea.style.position = 'absolute';
+          textarea.style.left = '-9999px';
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+        }
+
+        button.classList.add('copied');
+        button.querySelector('span').textContent = 'copied';
+
+        setTimeout(() => {
+          button.classList.remove('copied');
+          button.querySelector('span').textContent = 'copy';
+        }, 1400);
+      });
+
+      block.appendChild(button);
+    });
+  </script>
+
+</body>
+</html>
